@@ -2,10 +2,8 @@ import socket
 import json
 import subprocess
 import time
-
 import asyncio
 
-POLL_INTERVAL_S = 0.1
 SOCKET_ADDRESS = '/var/run/dsf/dcs.sock'
 MM_BUFFER_SIZE = 65536
 
@@ -149,9 +147,4 @@ async def track_machine_state(state, template = None, idle_event = None):
 
         status = new_status
         
-
-    
-template = {'heat' : {'heaters': {0 : {'current' : 'bed_temp'}}}, 'state' : {'status' : 'idle'}}
-
-asyncio.run(track_machine_state(dict(), template = template))
 
