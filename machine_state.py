@@ -133,7 +133,6 @@ async def track_machine_state(state, template = None, idle_event = None, die_eve
         terminate = lambda: not die_event.is_set()
    
     while terminate():
-
         await sendblob(writer,{"command" : "Acknowledge"})
             
         message = await getblob(reader)
