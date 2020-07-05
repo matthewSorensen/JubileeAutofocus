@@ -103,10 +103,10 @@ async def getblob(reader):
     return json.loads(data.decode())
                   
     
-async def track_machine_state(state, template = None, idle_event = None):
+async def track_machine_state(state, template = None, idle_event = None, die_event = None):
     
     status, idle_key  = None, None
-    if template:
+    if template is not None:
         template, idle_key = initialize_partial_state(state, template)
     
     reader, writer = await asyncio.open_unix_connection(SOCKET_ADDRESS)
@@ -128,7 +128,11 @@ async def track_machine_state(state, template = None, idle_event = None):
         else:
             idle_event.clear()
 
-    while True:
+    terminate = lambda: True
+    if die_event is not None:
+        terminate = lambda: not die_event.is_set()
+   
+    while terminate():
 
         await sendblob(writer,{"command" : "Acknowledge"})
             
@@ -141,10 +145,31 @@ async def track_machine_state(state, template = None, idle_event = None):
         else:
             recursive_update(state, message)
             new_status = state['state']['status']
-
-        if new_status == 'idle' and idle_event:
+    
+        if new_status == 'idle' and idle_event is not None:
             idle_event.set() # Wake everyone up!
 
         status = new_status
-        
 
+    writer.close()
+    await writer.wait_closed()
+
+async def command_connection():
+    """ Open a socket and set it up for running commands """
+
+    reader, writer = await asyncio.open_unix_connection(SOCKET_ADDRESS)
+    await sendblob(writer, {"mode":"command","version": 8})
+    await getblob(reader)
+
+    return reader, writer
+
+
+async def run_commands(connection, idle, commands):
+
+    
+    for g in commands:
+        await sendblob(connection[1], {"code" : g, "channel" : 0, "command" : "SimpleCode"})
+        await connection[0].read(MM_BUFFER_SIZE)
+        idle.clear()
+    # May take a little bit for the machine to become busy...
+    await idle.wait()
