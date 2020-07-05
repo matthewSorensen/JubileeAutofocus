@@ -39,19 +39,6 @@ def cv_worker_thread(qs):
     out_q.join()
 
 
-async def worker_thread(qs, conn, idle):
-    inq, outq = qs
-    
-    for z in range(165, 175):
-        
-        await run_commands(conn, idle, [f"""G0 Z{z}"""])
-
-    await inq.put(0)
-    val = await outq.get()
-    outq.task_done()
-    print(val)
-    await inq.put(None)
-
 
 async def async_main(qs):
 
@@ -69,7 +56,7 @@ async def async_main(qs):
     conn = await command_connection()
 
 
-    for z in range(160, 180):
+    for z in range(140, 200):
         
         await run_commands(conn, idle_flag, [f"""G0 Z{z}"""])
         
