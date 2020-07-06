@@ -78,12 +78,18 @@ def getblob(socket, buffer_size = 65536):
     return json.loads(data)
 
 
-def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_event, state_lock):
+def ignoreblob(socket, buffer_size = 65536):
+    socket.recv(buffer_size).decode()
+
+
+
+
+def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_event, ready_event, state_lock):
 
     # Figure out which bits of state we're going to track
     if template is not None:
         for k in keys_in_template(template):
-            state[k] = None
+            state[k] = {}
     # Connect to a socket for getting state updates
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(socket_addr)
@@ -91,8 +97,8 @@ def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_
 
     sendblob(sock,{"mode":"subscribe","version": 8, "subscriptionMode": "Patch"})
     # Two messages to ignore, and then the full state
-    getblob(sock) 
-    getblob(sock)
+    ignoreblob(sock) 
+    ignoreblob(sock)
 
     # Perform the first state update
     message = getblob(sock)
@@ -110,6 +116,7 @@ def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_
         busy_event.set()
         
 
+    ready_event.set()
         
     while not terminate_event.is_set():
         # Let the socket know we got that, and get a new update
@@ -141,15 +148,19 @@ def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_
 
 class MachineConnection:
 
-    def __init__(self, socket):
+    def __init__(self, socket, template = None):
 
         self.idle_event = threading.Event()
         self.busy_event = threading.Event()
         self.terminate_event = threading.Event()
+        self.ready_event = threading.Event()
         self.state_lock = threading.Lock()
         self.worker = None
         self.state = {}
-        self.template = {}
+        if template is None:
+            self.template = {}
+        else:
+            self.template = template
         self.socket_address = socket
 
     def __enter__(self):
@@ -157,15 +168,16 @@ class MachineConnection:
         self.worker = threading.Thread(target = worker_loop,
                                        args = (self.socket_address, self.state,
                                                self.template, self.idle_event, self.busy_event,
-                                               self.terminate_event, self.state_lock))
+                                               self.terminate_event, self.ready_event, self.state_lock))
         self.worker.start()
+        self.ready_event.wait()
         # Open a socket for sending gcode from this thread as well
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(self.socket_address)
         self.sock.setblocking(True)
 
         sendblob(self.sock, {"mode":"command","version": 8})
-        getblob(self.sock) # Ignore a welcome message - should check it...
+        ignoreblob(self.sock) # Ignore a welcome message - should check it...
         
         return self
 
