@@ -169,21 +169,23 @@ class MachineConnection:
         
         return self
 
-    def gcode(self, codes):
+    def gcode(self, codes, block = True):
         
         if isinstance(codes, str):
             codes = [codes]
 
-        print(codes)
         for g in codes:
             sendblob(self.sock, {"code" : g, "channel" : 0, "command" : "SimpleCode"})
             getblob(self.sock) # Again, should check this...
 
-        if self.busy_event.wait(1):
+        if block and self.busy_event.wait(1):
             self.idle_event.wait()
         # Presumably, enough time haspassed that the machine has had a chance to update its status.
         # This may not be correct.
-    
+
+    def is_busy(self):
+        return self.busy_event.is_set()
+        
     def current_state(self):
         with self.state_lock:
             return copy.deepcopy(self.state)
