@@ -3,7 +3,7 @@ import socket
 import time
 import json
 import copy
-
+import numpy as np
 
 def dict_or_list_iter(obj):
     """ Returns a key/value iterator for a dict or a list """
@@ -82,9 +82,14 @@ def ignoreblob(socket, buffer_size = 65536):
     socket.recv(buffer_size).decode()
 
 
+    
+internal_template = {'move': {'axes' : {0 : {'userPosition': 'x'},
+                                        1 : {'userPosition': 'y'},
+                                        2 : {'userPosition': 'z'},
+                                        3 : {'userPosition': 'u'}}}}
 
 
-def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_event, ready_event, state_lock):
+def worker_loop(socket_addr, state, internal_state, template, idle_event, busy_event, terminate_event, ready_event, state_lock):
 
     # Figure out which bits of state we're going to track
     if template is not None:
@@ -107,6 +112,7 @@ def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_
             partial_update(state, template, message)
         else:
             recursive_update(state, message)
+        partial_update(internal_state, internal_template, message)
     
     if message['state']['status'] == 'idle':
         idle_event.set()
@@ -129,6 +135,7 @@ def worker_loop(socket_addr, state, template, idle_event, busy_event, terminate_
             else:
                 recursive_update(state, message)
 
+            partial_update(internal_state, internal_template, message)
 
         if 'state' in message:
             st = message['state']
@@ -157,6 +164,7 @@ class MachineConnection:
         self.state_lock = threading.Lock()
         self.worker = None
         self.state = {}
+        self.internal_state = {}
         if template is None:
             self.template = {}
         else:
@@ -166,7 +174,7 @@ class MachineConnection:
     def __enter__(self):
         # Start the thread that polls state
         self.worker = threading.Thread(target = worker_loop,
-                                       args = (self.socket_address, self.state,
+                                       args = (self.socket_address, self.state, self.internal_state,
                                                self.template, self.idle_event, self.busy_event,
                                                self.terminate_event, self.ready_event, self.state_lock))
         self.worker.start()
@@ -192,8 +200,40 @@ class MachineConnection:
 
         if block and self.busy_event.wait(1):
             self.idle_event.wait()
-        # Presumably, enough time haspassed that the machine has had a chance to update its status.
-        # This may not be correct.
+
+    def move(self,*args,**kwargs):
+
+        n, moves = len(args), {}
+        sequence = ['X','Y','Z','E']
+        if n == 1:
+            args = args[0]
+            n = len(args)
+        if n > len(sequence):
+            return
+        for i,v in enumerate(args):
+            moves[sequence[i]] = v
+        for s in sequence:
+            if s in kwargs:
+                moves[s] = kwargs[s]
+        if 'f' in kwargs:
+            moves['F'] = kwargs['f']
+
+        gcode = 'G0 ' + ' '.join(axis + str(value) for axis, value in moves.items())
+        
+        if 'block' in kwargs:
+            self.gcode(gcode, block = kwargs['block'])
+        else:
+            self.gcode(gcode)
+
+
+    def xyzu(self):
+        vect = np.empty(4)
+        with self.state_lock:
+            vect[0] = self.internal_state['x']
+            vect[1] = self.internal_state['y']
+            vect[2] = self.internal_state['z']
+            vect[3] = self.internal_state['u']
+        return vect
 
     def is_busy(self):
         return self.busy_event.is_set()
