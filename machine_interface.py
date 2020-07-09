@@ -105,14 +105,14 @@ def worker_loop(socket_addr, state, internal_state, template, idle_event, busy_e
     ignoreblob(sock) 
     ignoreblob(sock)
 
-    # Perform the first state update
+    # Perform the first state update - no need to lock here,
+    # as the other thread is waiting on our ready signal
     message = getblob(sock)
-    with state_lock:
-        if template:  
-            partial_update(state, template, message)
-        else:
-            recursive_update(state, message)
-        partial_update(internal_state, internal_template, message)
+    if template:  
+        partial_update(state, template, message)
+    else:
+        recursive_update(state, message)
+    partial_update(internal_state, internal_template, message)
     
     if message['state']['status'] == 'idle':
         idle_event.set()
