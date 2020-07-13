@@ -93,14 +93,49 @@ def electric_slide(z_span, machine, camera):
     return (from_z + (to_z - from_z) * interp)
 
 
+def oversampled_focus(zrange, steps, grid, center, machine, camera, scale = 2):
+
+    lo, hi = zrange
+
+    for i in range(steps):
+        z = lo + (hi - lo) * i / steps
+        m.gcode(f"""G0 Z{z}""")
+
+        for j in range(grid):
+            x = (j / grid) * scale + center[0]
+            
+            for k in range(grid):
+                y = (k / grid) * scale + center[1]
+                m.gcode(f"""G0 X{x} Y{y}""")
+                ret, frame = cam.read()
+                score = CMSL(frame, 10).mean()
+
+                print(z, score)
+
+
+def linear_search(lo,hi,steps, machine, camera):
+
+    best = None
+    best_z = None
     
-    
+    for z in np.linspace(lo,hi, steps):
+        
+        m.gcode(f"""G0 Z{z}""")
+        ret, frame = cam.read()
+        score = CMSL(frame, 10).mean()
+        print(z, score)
+        if best is None or score > best:
+            best = score
+            best_z = z
+
+    return best_z, best
+
+
+       
 print("Establishing camera connection")
 cam = cv2.VideoCapture(0)
 
 with thread_state.MachineConnection('/var/run/dsf/dcs.sock') as m:
-
-
     
     def objective(z):
         
@@ -108,8 +143,16 @@ with thread_state.MachineConnection('/var/run/dsf/dcs.sock') as m:
         ret, frame = cam.read()
         return CMSL(frame, 10).mean()
 
-    x = electric_slide((10,200), m, cam)
+    best_z, _ = linear_search(20, 200, 100, m, cam)
+    print("Second search")
+    best_z, _ = linear_search(best_z - 20,best_z, 100, m, cam)
+
+    print("Final tuning")
+    a,b = gss(objective, best_z- 2, best_z + 2 , 0.05)
+
+    print(0.5 * (a + b))
+    print(objective(0.5 * (a + b)))
     
-    print(gss(objective, x - 10, x + 10 , 0.05))
-        
+    #oversampled_focus((z - 0.25, 56.97900690713337 + 0.25), 20, 5, (150, 150), m, cam)
+    
 cam.release()
