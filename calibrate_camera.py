@@ -7,8 +7,13 @@ import json
 import picamera
 
 import cv2
-
 from machine_interface import MachineConnection
+
+
+
+
+
+
 
 def find_single_point(frame,gain = 3.0):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
